@@ -25,10 +25,10 @@ func requireNArgs(n int, c int) bool {
 
 func init() {
 	flag.Usage = func() {
-		_, _ = fmt.Fprintf(os.Stderr, `Usage: score-pulumi [subcommand] [options]
+		_, _ = fmt.Fprintf(os.Stderr, `Usage: scorpion [subcommand] [options]
 
 Basic commands:
-  init				initialise a new score-pulumi project directory
+  init				initialise a new scorpion project directory
   generate			add or update a Score workload in the project and regenerate the output code
 `)
 		flag.PrintDefaults()
@@ -36,7 +36,14 @@ Basic commands:
 }
 
 func main() {
+	dirFlag := flag.String("dir", "", "change to this directory before doing anything else")
 	flag.Parse()
+	if *dirFlag != "" {
+		if err := os.Chdir(*dirFlag); err != nil {
+			_, _ = os.Stderr.WriteString(err.Error())
+			os.Exit(1)
+		}
+	}
 	if requireNArgs(1, 1) {
 		var err error
 		if subcommand := flag.Arg(0); subcommand == "init" && requireNArgs(1, 0) {
