@@ -110,6 +110,19 @@ func scoreGenerate(fileName string) error {
 		}
 	}
 
+	c, err := cfg.GenerateComponentGraph()
+	if err != nil {
+		return err
+	}
+
+	f, err := BuildJenFile(c)
+	if err != nil {
+		return err
+	}
+	if err := f.Render(os.Stdout); err != nil {
+		return err
+	}
+	
 	if err := SaveConfig(cfg); err != nil {
 		return err
 	}

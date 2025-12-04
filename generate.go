@@ -14,6 +14,10 @@ import (
 	"github.com/score-spec/score-go/framework"
 )
 
+const (
+	DefaultPulumiPackage = "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+)
+
 /**
 THOUGHTS
 
@@ -242,6 +246,39 @@ func (cfg *ScoreConfig) GenerateComponentGraph() (ComponentGraph, error) {
 	return g, nil
 }
 
+func pulumifyValue(raw interface{}) jen.Code {
+	if raw == nil {
+		return jen.Nil()
+	}
+	switch typed := raw.(type) {
+	case string:
+		return jen.Qual(DefaultPulumiPackage, "String").Call(jen.Lit(typed))
+	case bool:
+		if typed {
+			return jen.Qual(DefaultPulumiPackage, "Bool").Call(jen.True())
+		}
+		return jen.Qual(DefaultPulumiPackage, "Bool").Call(jen.False())
+	case float64:
+		return jen.Qual(DefaultPulumiPackage, "Float64").Call(jen.Lit(typed))
+	case int:
+		return jen.Qual(DefaultPulumiPackage, "Int").Call(jen.Lit(typed))
+	case []interface{}:
+		return jen.Qual(DefaultPulumiPackage, "Array").Values(jen.ListFunc(func(group *jen.Group) {
+			for _, v := range typed {
+				group.Add(pulumifyValue(v))
+			}
+		}))
+	case map[string]interface{}:
+		return jen.Qual(DefaultPulumiPackage, "Map").Values(jen.DictFunc(func(d jen.Dict) {
+			for k, v := range typed {
+				d[jen.Lit(k)] = pulumifyValue(v)
+			}
+		}))
+	default:
+		panic(fmt.Sprintf("unsupported type %T", typed))
+	}
+}
+
 func BuildJenFile(g ComponentGraph) (*jen.File, error) {
 	f := jen.NewFile("main")
 
@@ -250,16 +287,25 @@ func BuildJenFile(g ComponentGraph) (*jen.File, error) {
 		n := g.Nodes[id]
 		blockParts = append(
 			blockParts,
-			jen.List(jen.Id(string(id)), jen.Error()).Op(":=").Qual(n.Package, n.Constructor).Call(jen.Id("ctx"), jen.Op("&").Qual(n.Package, n.ArgsType).Values(jen.DictFunc(func(d jen.Dict) {}))),
+			jen.List(jen.Id(string(id)), jen.Err()).Op(":=").Qual(n.Package, n.Constructor).Call(jen.Id("ctx"), jen.Lit(n.Name), jen.Op("&").Qual(n.Package, n.ArgsType).Values(jen.DictFunc(func(d jen.Dict) {
+				for k, v := range n.Params {
+					d[jen.Id(k)] = pulumifyValue(v)
+				}
+			}))),
+			jen.If(jen.Err().Op("!=").Nil()).Block(jen.Return(jen.Err())),
+			jen.Id("ctx.Log.Debug").Call(jen.Lit("deployed '%s'"), jen.Id(string(id)).Op(".").Id("PulumiResourceName").Call()),
+			jen.Line(),
 		)
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 
+	blockParts = append(blockParts, jen.Return(jen.Nil()))
+
 	f.Func().Id("main").Params().Block(
-		jen.Qual("github.com/pulumi/pulumi/sdk/v3/go/pulumi", "Run").Call(jen.Func().Params(
-			jen.Id("ctx").Op("*").Qual("github.com/pulumi/pulumi/sdk/v3/go/pulumi", "Context"),
+		jen.Qual(DefaultPulumiPackage, "Run").Call(jen.Func().Params(
+			jen.Id("ctx").Op("*").Qual(DefaultPulumiPackage, "Context"),
 		).Error().Block(
 			blockParts...,
 		)),

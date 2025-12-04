@@ -1,3 +1,5 @@
-wd/
+/wd/
 config.json
 score.yaml
+.idea/
+/temp*/

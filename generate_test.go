@@ -130,7 +130,13 @@ func TestGenerateComponentGraph_nominal(t *testing.T) {
 func TestGeneratePulumiArgsStructAst(t *testing.T) {
 	f, err := BuildJenFile(ComponentGraph{
 		Nodes: map[ComponentGoIdentifier]ComponentInstance{
-			"sharedThingdae392ce": {Package: "github.com/astromechza/score-pulumi/lib/echo", Constructor: "NewEcho", ArgsType: "EchoArgs", Name: "shared.thing", Params: map[string]interface{}{"x": "hello", "y": "foo"}, ParamsDefinedBy: "workloadFoo6d39e786"},
+			"sharedThingdae392ce": {Package: "github.com/astromechza/score-pulumi/lib/echo", Constructor: "NewEcho", ArgsType: "EchoArgs", Name: "shared.thing", Params: map[string]interface{}{
+				"x": "hello",
+				"y": 42,
+				"z": true,
+				"w": []interface{}{"a", "b"},
+				"v": map[string]interface{}{"a": 1, "b": 2},
+			}, ParamsDefinedBy: "workloadFoo6d39e786"},
 		},
 	})
 	require.NoError(t, err)
