@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/dave/jennifer/jen"
 	"github.com/score-spec/score-go/framework"
@@ -173,9 +175,9 @@ func (cfg *ScoreConfig) GenerateComponentGraph() (ComponentGraph, error) {
 			c, ok := g.Nodes[resGoIdentifier]
 			if !ok {
 				c = ComponentInstance{
-					Package:     "github.com/astromechza/score-pulumi/lib/echo",
-					Constructor: "NewEcho",
-					ArgsType:    "EchoArgs",
+					Package:     "github.com/astromechza/pulumi-echo",
+					Constructor: "NewComponent",
+					ArgsType:    "Args",
 					Name:        resId,
 				}
 			}
@@ -231,9 +233,9 @@ func (cfg *ScoreConfig) GenerateComponentGraph() (ComponentGraph, error) {
 			}
 		}
 		g.Nodes[workloadGoIdentifier] = ComponentInstance{
-			Package:         "github.com/astromechza/score-pulumi/lib/echo",
-			Constructor:     "NewEcho",
-			ArgsType:        "EchoArgs",
+			Package:         "github.com/astromechza/pulumi-echo",
+			Constructor:     "NewComponent",
+			ArgsType:        "Args",
 			Name:            "workload." + workloadName,
 			Params:          workloadParams,
 			ParamsDefinedBy: workloadGoIdentifier,
@@ -246,37 +248,80 @@ func (cfg *ScoreConfig) GenerateComponentGraph() (ComponentGraph, error) {
 	return g, nil
 }
 
-func pulumifyValue(raw interface{}) jen.Code {
+func pulumifyValue(path []string, raw interface{}) (jen.Code, error) {
 	if raw == nil {
-		return jen.Nil()
+		return jen.Nil(), nil
 	}
 	switch typed := raw.(type) {
 	case string:
-		return jen.Qual(DefaultPulumiPackage, "String").Call(jen.Lit(typed))
+		if strings.Contains(typed, "${") {
+			typed = strings.ReplaceAll(typed, "%", "%%")
+			fmtArgs := make([]jen.Code, 0)
+			if v, err := framework.SubstituteString(typed, func(s string) (string, error) {
+				fmtArgs = append(fmtArgs, jen.Lit("banana"))
+				return "%v", nil
+			}); err != nil {
+				return nil, fmt.Errorf("failed to substitute %q at %s: %w", typed, strings.Join(path, "."), err)
+			} else {
+				fmtArgs = append([]jen.Code{jen.Lit(v)}, fmtArgs...)
+				return jen.Qual(DefaultPulumiPackage, "Sprintf").Call(fmtArgs...), nil
+			}
+		} else {
+			return jen.Qual(DefaultPulumiPackage, "String").Call(jen.Lit(typed)), nil
+		}
 	case bool:
 		if typed {
-			return jen.Qual(DefaultPulumiPackage, "Bool").Call(jen.True())
+			return jen.Qual(DefaultPulumiPackage, "Bool").Call(jen.True()), nil
 		}
-		return jen.Qual(DefaultPulumiPackage, "Bool").Call(jen.False())
+		return jen.Qual(DefaultPulumiPackage, "Bool").Call(jen.False()), nil
 	case float64:
-		return jen.Qual(DefaultPulumiPackage, "Float64").Call(jen.Lit(typed))
+		return jen.Qual(DefaultPulumiPackage, "Float64").Call(jen.Lit(typed)), nil
 	case int:
-		return jen.Qual(DefaultPulumiPackage, "Int").Call(jen.Lit(typed))
+		return jen.Qual(DefaultPulumiPackage, "Int").Call(jen.Lit(typed)), nil
 	case []interface{}:
-		return jen.Qual(DefaultPulumiPackage, "Array").Values(jen.ListFunc(func(group *jen.Group) {
-			for _, v := range typed {
-				group.Add(pulumifyValue(v))
+		listValues := make([]jen.Code, 0, len(typed))
+		for i, v := range typed {
+			if out, err := pulumifyValue(append(path, fmt.Sprintf("[%d]", i)), v); err != nil {
+				return nil, err
+			} else {
+				listValues = append(listValues, out)
 			}
-		}))
+		}
+		return jen.Qual(DefaultPulumiPackage, "Array").Values(jen.List(listValues...)), nil
 	case map[string]interface{}:
-		return jen.Qual(DefaultPulumiPackage, "Map").Values(jen.DictFunc(func(d jen.Dict) {
-			for k, v := range typed {
-				d[jen.Lit(k)] = pulumifyValue(v)
+		mapValues := make(jen.Dict, len(typed))
+		for k, v := range typed {
+			if out, err := pulumifyValue(append(path, k), v); err != nil {
+				return nil, err
+			} else {
+				mapValues[jen.Lit(k)] = out
 			}
-		}))
+		}
+		return jen.Qual(DefaultPulumiPackage, "Map").Values(mapValues), nil
 	default:
 		panic(fmt.Sprintf("unsupported type %T", typed))
 	}
+}
+
+func toParamName(p string) jen.Code {
+	var buff bytes.Buffer
+	nextUpper := true
+	for _, v := range p {
+		if unicode.IsUpper(v) || unicode.IsDigit(v) {
+			buff.WriteRune(v)
+			nextUpper = false
+		} else if unicode.IsLower(v) {
+			if nextUpper {
+				buff.WriteRune(unicode.ToUpper(v))
+			} else {
+				buff.WriteRune(v)
+			}
+			nextUpper = false
+		} else {
+			nextUpper = true
+		}
+	}
+	return jen.Id(buff.String())
 }
 
 func BuildJenFile(g ComponentGraph) (*jen.File, error) {
@@ -285,15 +330,25 @@ func BuildJenFile(g ComponentGraph) (*jen.File, error) {
 	blockParts := make([]jen.Code, 0)
 	if err := g.VisitInDependencyOrder(func(id ComponentGoIdentifier) error {
 		n := g.Nodes[id]
+
+		argAssignments := make(jen.Dict, len(n.Params))
+		for k, v := range n.Params {
+			if o, err := pulumifyValue([]string{k}, v); err != nil {
+				return err
+			} else {
+				argAssignments[toParamName(k)] = o
+			}
+		}
+
 		blockParts = append(
 			blockParts,
 			jen.List(jen.Id(string(id)), jen.Err()).Op(":=").Qual(n.Package, n.Constructor).Call(jen.Id("ctx"), jen.Lit(n.Name), jen.Op("&").Qual(n.Package, n.ArgsType).Values(jen.DictFunc(func(d jen.Dict) {
-				for k, v := range n.Params {
-					d[jen.Id(k)] = pulumifyValue(v)
+				for k, v := range argAssignments {
+					d[k] = v
 				}
 			}))),
 			jen.If(jen.Err().Op("!=").Nil()).Block(jen.Return(jen.Err())),
-			jen.Id("ctx.Log.Debug").Call(jen.Lit("deployed '%s'"), jen.Id(string(id)).Op(".").Id("PulumiResourceName").Call()),
+			jen.Id("_").Op("=").Id("ctx.Log.Debug").Call(jen.Lit("provisioned"), jen.Op("&").Qual(DefaultPulumiPackage, "LogArgs").Values(jen.Dict{jen.Id("Resource"): jen.Id(string(id))})),
 			jen.Line(),
 		)
 		return nil
