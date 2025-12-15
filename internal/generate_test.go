@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"testing"
@@ -107,11 +107,11 @@ func TestGenerateComponentGraph_nominal(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, ComponentGraph{
 		Nodes: map[ComponentGoIdentifier]ComponentInstance{
-			"sharedThingdae392ce":  {Package: "github.com/astromechza/score-pulumi/lib/echo", Constructor: "NewEcho", ArgsType: "EchoArgs", Name: "shared.thing", Params: map[string]interface{}{"x": "hello", "y": "foo"}, ParamsDefinedBy: "workloadFoo6d39e786"},
-			"workloadBar2eeefa0f":  {Package: "github.com/astromechza/score-pulumi/lib/echo", Constructor: "NewEcho", ArgsType: "EchoArgs", Name: "workload.bar", Params: map[string]interface{}{"containers": map[string]interface{}(nil), "metadata": map[string]interface{}{"name": "bar"}}, ParamsDefinedBy: "workloadBar2eeefa0f"},
-			"workloadBarA9c79b8d6": {Package: "github.com/astromechza/score-pulumi/lib/echo", Constructor: "NewEcho", ArgsType: "EchoArgs", Name: "workload.bar.a", Params: map[string]interface{}{"raw": "banana"}, ParamsDefinedBy: "workloadBar2eeefa0f"},
-			"workloadFoo6d39e786":  {Package: "github.com/astromechza/score-pulumi/lib/echo", Constructor: "NewEcho", ArgsType: "EchoArgs", Name: "workload.foo", Params: map[string]interface{}{"containers": map[string]interface{}(nil), "metadata": map[string]interface{}{"name": "foo"}}, ParamsDefinedBy: "workloadFoo6d39e786"},
-			"workloadFooAc5757e5b": {Package: "github.com/astromechza/score-pulumi/lib/echo", Constructor: "NewEcho", ArgsType: "EchoArgs", Name: "workload.foo.a", Params: map[string]interface{}{"plain": "${resources.b.p}", "wrapped": "before ${resources.b.p} after"}, ParamsDefinedBy: "workloadFoo6d39e786"},
+			"sharedThingdae392ce":  {Package: "github.com/astromechza/pulumi-echo", Constructor: "NewComponent", ArgsType: "Args", Name: "shared.thing", Params: map[string]interface{}{"x": "hello", "y": "foo"}, ParamsDefinedBy: "workloadFoo6d39e786"},
+			"workloadBar2eeefa0f":  {Package: "github.com/astromechza/pulumi-echo", Constructor: "NewComponent", ArgsType: "Args", Name: "workload.bar", Params: map[string]interface{}{"containers": map[string]interface{}(nil), "metadata": map[string]interface{}{"name": "bar"}}, ParamsDefinedBy: "workloadBar2eeefa0f"},
+			"workloadBarA9c79b8d6": {Package: "github.com/astromechza/pulumi-echo", Constructor: "NewComponent", ArgsType: "Args", Name: "workload.bar.a", Params: map[string]interface{}{"raw": "banana"}, ParamsDefinedBy: "workloadBar2eeefa0f"},
+			"workloadFoo6d39e786":  {Package: "github.com/astromechza/pulumi-echo", Constructor: "NewComponent", ArgsType: "Args", Name: "workload.foo", Params: map[string]interface{}{"containers": map[string]interface{}(nil), "metadata": map[string]interface{}{"name": "foo"}}, ParamsDefinedBy: "workloadFoo6d39e786"},
+			"workloadFooAc5757e5b": {Package: "github.com/astromechza/pulumi-echo", Constructor: "NewComponent", ArgsType: "Args", Name: "workload.foo.a", Params: map[string]interface{}{"plain": "${resources.b.p}", "wrapped": "before ${resources.b.p} after"}, ParamsDefinedBy: "workloadFoo6d39e786"},
 		},
 		Dependencies: map[ComponentGoIdentifier]map[LocalAlias]ComponentGoIdentifier{
 			"workloadBar2eeefa0f":  {"a": "workloadBarA9c79b8d6", "b": "sharedThingdae392ce"},
@@ -140,5 +140,32 @@ func TestGeneratePulumiArgsStructAst(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, ``, f.GoString())
+	assert.Equal(t, `package main
+
+import (
+	echo "github.com/astromechza/score-pulumi/lib/echo"
+	pulumi "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+)
+
+func main() {
+	pulumi.Run(func(ctx *pulumi.Context) error {
+		sharedThingdae392ce, err := echo.NewEcho(ctx, "shared.thing", &echo.EchoArgs{
+			V: pulumi.Map{
+				"a": pulumi.Int(1),
+				"b": pulumi.Int(2),
+			},
+			W: pulumi.Array{pulumi.String("a"), pulumi.String("b")},
+			X: pulumi.String("hello"),
+			Y: pulumi.Int(42),
+			Z: pulumi.Bool(true),
+		})
+		if err != nil {
+			return err
+		}
+		_ = ctx.Log.Debug("provisioned", &pulumi.LogArgs{Resource: sharedThingdae392ce})
+
+		return nil
+	})
+}
+`, f.GoString())
 }

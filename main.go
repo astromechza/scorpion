@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"flag"
 	"fmt"
+	"github.com/astromechza/score-pulumi/internal"
 	"os"
 	"slices"
 
@@ -61,10 +62,10 @@ func main() {
 }
 
 func scoreInit() error {
-	if _, ok, err := LoadConfig(); err != nil {
+	if _, ok, err := internal.LoadConfig(); err != nil {
 		return err
 	} else if !ok {
-		if err := SaveConfig(ScoreConfig{Workloads: make([]types.Workload, 0)}); err != nil {
+		if err := internal.SaveConfig(internal.ScoreConfig{Workloads: make([]types.Workload, 0)}); err != nil {
 			return err
 		}
 	}
@@ -72,10 +73,10 @@ func scoreInit() error {
 }
 
 func scoreGenerate(fileName string) error {
-	var cfg ScoreConfig
+	var cfg internal.ScoreConfig
 	var err error
 	if fileName == "" {
-		if cfg, _, err = LoadConfig(); err != nil {
+		if cfg, _, err = internal.LoadConfig(); err != nil {
 			return err
 		}
 	} else if f, err := os.Open(fileName); err != nil {
@@ -98,7 +99,7 @@ func scoreGenerate(fileName string) error {
 			return err
 		}
 
-		if cfg, _, err = LoadConfig(); err != nil {
+		if cfg, _, err = internal.LoadConfig(); err != nil {
 			return err
 		}
 		if i := slices.IndexFunc(cfg.Workloads, func(other types.Workload) bool {
@@ -115,15 +116,15 @@ func scoreGenerate(fileName string) error {
 		return err
 	}
 
-	f, err := BuildJenFile(c)
+	f, err := internal.BuildJenFile(c)
 	if err != nil {
 		return err
 	}
 	if err := f.Render(os.Stdout); err != nil {
 		return err
 	}
-	
-	if err := SaveConfig(cfg); err != nil {
+
+	if err := internal.SaveConfig(cfg); err != nil {
 		return err
 	}
 	return nil
