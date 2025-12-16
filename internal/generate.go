@@ -303,6 +303,7 @@ func pulumifyValue(path []string, raw interface{}) (jen.Code, error) {
 	}
 }
 
+// toParamName converts field names into Go-like field identifiers in CamelCase.
 func toParamName(p string) jen.Code {
 	var buff bytes.Buffer
 	nextUpper := true

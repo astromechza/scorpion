@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"github.com/dave/jennifer/jen"
 	"testing"
 
 	"github.com/score-spec/score-go/types"
@@ -168,4 +169,17 @@ func main() {
 	})
 }
 `, f.GoString())
+}
+
+func Test_toParamName(t *testing.T) {
+	for k, v := range map[string]string{
+		"foo":        "Foo",
+		"snake_case": "SnakeCase",
+		"field42":    "Field42",
+		"SomeField":  "SomeField",
+	} {
+		t.Run(k, func(t *testing.T) {
+			assert.Equal(t, jen.Id(v), toParamName(k))
+		})
+	}
 }
