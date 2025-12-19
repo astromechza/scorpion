@@ -1,28 +1,15 @@
-package main
+package debug
 
 import (
 	"log/slog"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 type Args struct {
-	Metadata   pulumi.MapInput            `pulumi:"metadata"`
-	Containers pulumix.Map[ContainerArgs] `pulumi:"containers"`
-	Service    ServiceArgs                `pulumi:"service"`
-}
-
-type ContainerArgs struct {
-	Image pulumi.StringInput `pulumi:"image"`
-}
-
-type ServiceArgs struct {
-	Ports pulumix.Map[ServicePort] `pulumi:"ports"`
-}
-
-type ServicePort struct {
-	Port int `pulumi:"port"`
+	Metadata   pulumi.MapInput `pulumi:"metadata"`
+	Containers pulumi.MapInput `pulumi:"containers"`
+	Service    pulumi.MapInput `pulumi:"service"`
 }
 
 type Debug struct {

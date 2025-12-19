@@ -6,6 +6,7 @@ require (
 	github.com/dave/jennifer v1.7.1
 	github.com/score-spec/score-go v1.11.5
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/mod v0.31.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -14,5 +15,4 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
-	golang.org/x/mod v0.31.0 // indirect
 )
