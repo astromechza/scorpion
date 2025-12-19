@@ -4,9 +4,10 @@ import (
 	"cmp"
 	"flag"
 	"fmt"
-	"github.com/astromechza/score-pulumi/internal"
 	"os"
 	"slices"
+
+	"github.com/astromechza/score-pulumi/internal"
 
 	"github.com/score-spec/score-go/loader"
 	"github.com/score-spec/score-go/schema"
@@ -14,10 +15,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var cmpDesc = map[int]string{
+	-1: "less than",
+	0:  "exactly",
+	1:  "more than",
+}
+
 func requireNArgs(n int, c int) bool {
 	n -= c
 	if cmp.Compare(flag.NArg(), n) != c {
-		flag.Usage()
+		_, _ = os.Stderr.WriteString(fmt.Sprintf("expected %s %d arguments but got %d\n", cmpDesc[c], n, flag.NArg()))
 		os.Exit(2)
 		return false
 	}
@@ -39,34 +46,54 @@ Basic commands:
 func main() {
 	dirFlag := flag.String("dir", "", "change to this directory before doing anything else")
 	flag.Parse()
+
 	if *dirFlag != "" {
 		if err := os.Chdir(*dirFlag); err != nil {
-			_, _ = os.Stderr.WriteString(err.Error())
+			_, _ = os.Stderr.WriteString(err.Error() + "\n")
 			os.Exit(1)
 		}
 	}
+
 	if requireNArgs(1, 1) {
 		var err error
-		if subcommand := flag.Arg(0); subcommand == "init" && requireNArgs(1, 0) {
-			err = scoreInit()
+		if subcommand := flag.Arg(0); subcommand == "init" && requireNArgs(2, 0) {
+			err = scoreInit(flag.Arg(1))
 		} else if subcommand == "generate" && requireNArgs(2, -1) {
 			err = scoreGenerate(flag.Arg(1))
 		} else {
 			err = fmt.Errorf("unknown subcommand: '%s'", subcommand)
 		}
 		if err != nil {
-			_, _ = os.Stderr.WriteString(err.Error())
+			_, _ = os.Stderr.WriteString(err.Error() + "\n")
 			os.Exit(1)
 		}
 	}
 }
 
-func scoreInit() error {
-	if _, ok, err := internal.LoadConfig(); err != nil {
+func scoreInit(profile string) error {
+	if cfg, ok, err := internal.LoadConfig(); err != nil {
 		return err
 	} else if !ok {
-		if err := internal.SaveConfig(internal.ScoreConfig{Workloads: make([]types.Workload, 0)}); err != nil {
+		profile, err := internal.BuildWorkloadComponentForProfile(profile)
+		if err != nil {
 			return err
+		}
+		if err := internal.SaveConfig(internal.ScoreConfig{
+			Workloads:                make([]types.Workload, 0),
+			DefaultWorkloadComponent: profile,
+		}); err != nil {
+			return err
+		}
+	} else {
+		profile, err := internal.BuildWorkloadComponentForProfile(profile)
+		if err != nil {
+			return err
+		}
+		if profile != cfg.DefaultWorkloadComponent {
+			cfg.DefaultWorkloadComponent = profile
+			if err := internal.SaveConfig(cfg); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -108,6 +135,16 @@ func scoreGenerate(fileName string) error {
 			cfg.Workloads[i] = spec
 		} else {
 			cfg.Workloads = append(cfg.Workloads, spec)
+		}
+	}
+
+	if err := internal.ValidateComponentEntry(cfg.DefaultWorkloadComponent); err != nil {
+		return fmt.Errorf("config contains an invalid default workload component spec: %v", err)
+	} else {
+		for i, entry := range cfg.ResourceComponents {
+			if err := internal.ValidateComponentEntry(entry.ComponentEntry); err != nil {
+				return fmt.Errorf("config contains an invalid resource component spec (%d): %v", i, err)
+			}
 		}
 	}
 

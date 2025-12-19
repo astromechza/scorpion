@@ -14,4 +14,5 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
+	golang.org/x/mod v0.31.0 // indirect
 )

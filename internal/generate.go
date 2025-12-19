@@ -20,19 +20,6 @@ const (
 	DefaultPulumiPackage = "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-/**
-THOUGHTS
-
-- build a simple graph of the resources and workload
-- for each node, generate a struct literal, and for each placeholder, generate an edge to another node
-- detect cycles
-- do a depth first iteration and generate the expressions
-
-
-
-
-*/
-
 type ComponentInstance struct {
 	// Package is the import path such as github.com/pulumi/pulumi-aws/sdk/v6/go/aws/rds
 	// The alias is assumed to be the same as the package name unless overridden at generation time
@@ -171,13 +158,22 @@ func (cfg *ScoreConfig) GenerateComponentGraph() (ComponentGraph, error) {
 			if res.Id != nil {
 				resId = "shared." + *res.Id
 			}
+			resClass := "default"
+			if res.Class != nil {
+				resClass = *res.Class
+			}
 			resGoIdentifier := GenerateGoVar(resId)
 			c, ok := g.Nodes[resGoIdentifier]
 			if !ok {
+				componentEntry, ok := FindResourceComponent(cfg.ResourceComponents, res.Type, resClass, resId)
+				if !ok {
+					return g, fmt.Errorf("failed to find an entry in the component library to provision resource '%s' with type '%s' and class '%s'", resId, res.Type, resClass)
+				}
+				// TODO: we need to validate the resource component entries
 				c = ComponentInstance{
-					Package:     "github.com/astromechza/pulumi-echo",
-					Constructor: "NewComponent",
-					ArgsType:    "Args",
+					Package:     componentEntry.Package,
+					Constructor: componentEntry.ConstructorFunc,
+					ArgsType:    componentEntry.ArgsStruct,
 					Name:        resId,
 				}
 			}
@@ -232,10 +228,12 @@ func (cfg *ScoreConfig) GenerateComponentGraph() (ComponentGraph, error) {
 				workloadParams["service"] = s
 			}
 		}
+
+		// TODO: we need to validate the workload component entry
 		g.Nodes[workloadGoIdentifier] = ComponentInstance{
-			Package:         "github.com/astromechza/pulumi-echo",
-			Constructor:     "NewComponent",
-			ArgsType:        "Args",
+			Package:         cfg.DefaultWorkloadComponent.Package,
+			Constructor:     cfg.DefaultWorkloadComponent.ConstructorFunc,
+			ArgsType:        cfg.DefaultWorkloadComponent.ArgsStruct,
 			Name:            "workload." + workloadName,
 			Params:          workloadParams,
 			ParamsDefinedBy: workloadGoIdentifier,
@@ -248,7 +246,62 @@ func (cfg *ScoreConfig) GenerateComponentGraph() (ComponentGraph, error) {
 	return g, nil
 }
 
-func pulumifyValue(path []string, raw interface{}) (jen.Code, error) {
+func mapLookupOutput(ctx map[string]interface{}) func(keys ...string) (interface{}, error) {
+	return func(keys ...string) (interface{}, error) {
+		var resolvedValue interface{}
+		resolvedValue = ctx
+		for _, k := range keys {
+			mapV, ok := resolvedValue.(map[string]interface{})
+			if !ok {
+				return "", fmt.Errorf("cannot lookup key '%s', context is not a map", k)
+			}
+			resolvedValue, ok = mapV[k]
+			if !ok {
+				return "", fmt.Errorf("key '%s' not found", k)
+			}
+		}
+		return resolvedValue, nil
+	}
+}
+
+func buildInnerSubstitutionFunc(metadata map[string]interface{}, dependencies map[LocalAlias]ComponentGoIdentifier) func(fmtArgs *[]jen.Code) func(s string) (string, error) {
+	metadataLookup := mapLookupOutput(metadata)
+	return func(fmtArgs *[]jen.Code) func(s string) (string, error) {
+		return func(ref string) (string, error) {
+			parts := framework.SplitRefParts(ref)
+			switch parts[0] {
+			case "metadata":
+				if len(parts) < 2 {
+					return "", fmt.Errorf("invalid ref '%s': requires at least a metadata key to lookup", ref)
+				}
+				if rv, err := metadataLookup(parts[1:]...); err != nil {
+					return "", fmt.Errorf("invalid ref '%s': %w", ref, err)
+				} else {
+					*fmtArgs = append(*fmtArgs, jen.Lit(rv))
+					return "%v", nil
+				}
+			case "resources":
+				if len(parts) < 2 {
+					return "", fmt.Errorf("invalid ref '%s': requires at least a resource name to lookup", ref)
+				}
+				rv, ok := dependencies[LocalAlias(parts[1])]
+				if !ok {
+					return "", fmt.Errorf("invalid ref '%s': no known resource '%s'", ref, parts[1])
+				}
+				c := jen.Id(string(rv))
+				for _, p := range parts[2:] {
+					c = c.Dot(toParamName(p).GoString())
+				}
+				*fmtArgs = append(*fmtArgs, c)
+				return "%v", nil
+			default:
+				return "", fmt.Errorf("invalid ref '%s': unknown reference root, use $$ to escape the substitution", ref)
+			}
+		}
+	}
+}
+
+func pulumifyValue(path []string, raw interface{}, innerSubstFunc func(fmtArgs *[]jen.Code) func(s string) (string, error)) (jen.Code, error) {
 	if raw == nil {
 		return jen.Nil(), nil
 	}
@@ -257,10 +310,7 @@ func pulumifyValue(path []string, raw interface{}) (jen.Code, error) {
 		if strings.Contains(typed, "${") {
 			typed = strings.ReplaceAll(typed, "%", "%%")
 			fmtArgs := make([]jen.Code, 0)
-			if v, err := framework.SubstituteString(typed, func(s string) (string, error) {
-				fmtArgs = append(fmtArgs, jen.Lit("banana"))
-				return "%v", nil
-			}); err != nil {
+			if v, err := framework.SubstituteString(typed, innerSubstFunc(&fmtArgs)); err != nil {
 				return nil, fmt.Errorf("failed to substitute %q at %s: %w", typed, strings.Join(path, "."), err)
 			} else {
 				fmtArgs = append([]jen.Code{jen.Lit(v)}, fmtArgs...)
@@ -281,7 +331,7 @@ func pulumifyValue(path []string, raw interface{}) (jen.Code, error) {
 	case []interface{}:
 		listValues := make([]jen.Code, 0, len(typed))
 		for i, v := range typed {
-			if out, err := pulumifyValue(append(path, fmt.Sprintf("[%d]", i)), v); err != nil {
+			if out, err := pulumifyValue(append(path, fmt.Sprintf("[%d]", i)), v, innerSubstFunc); err != nil {
 				return nil, err
 			} else {
 				listValues = append(listValues, out)
@@ -291,7 +341,7 @@ func pulumifyValue(path []string, raw interface{}) (jen.Code, error) {
 	case map[string]interface{}:
 		mapValues := make(jen.Dict, len(typed))
 		for k, v := range typed {
-			if out, err := pulumifyValue(append(path, k), v); err != nil {
+			if out, err := pulumifyValue(append(path, k), v, innerSubstFunc); err != nil {
 				return nil, err
 			} else {
 				mapValues[jen.Lit(k)] = out
@@ -304,7 +354,7 @@ func pulumifyValue(path []string, raw interface{}) (jen.Code, error) {
 }
 
 // toParamName converts field names into Go-like field identifiers in CamelCase.
-func toParamName(p string) jen.Code {
+func toParamName(p string) *jen.Statement {
 	var buff bytes.Buffer
 	nextUpper := true
 	for _, v := range p {
@@ -332,9 +382,10 @@ func BuildJenFile(g ComponentGraph) (*jen.File, error) {
 	if err := g.VisitInDependencyOrder(func(id ComponentGoIdentifier) error {
 		n := g.Nodes[id]
 
+		substFunc := buildInnerSubstitutionFunc(n.Params, g.Dependencies[id])
 		argAssignments := make(jen.Dict, len(n.Params))
 		for k, v := range n.Params {
-			if o, err := pulumifyValue([]string{k}, v); err != nil {
+			if o, err := pulumifyValue([]string{k}, v, substFunc); err != nil {
 				return err
 			} else {
 				argAssignments[toParamName(k)] = o

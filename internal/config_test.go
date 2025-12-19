@@ -70,3 +70,48 @@ func TestSaveConfig(t *testing.T) {
 	_, err = os.Stat(ConfigFile + ".tmp")
 	require.EqualError(t, err, "stat config.json.tmp: no such file or directory")
 }
+
+func Test_isResourceComponentAMatch(t *testing.T) {
+	entry := ResourceComponentEntry{
+		ResourceType:       "eg",
+		ResourceClassRegex: `.*`,
+		ResourceIdRegex:    `.*`,
+	}
+	f := buildResourceComponentMatcher("eg", "default", "some.resource")
+	assert.True(t, f(entry))
+	t.Run("with bad type", func(t *testing.T) {
+		entry := entry
+		entry.ResourceType = "unknown"
+		assert.False(t, f(entry))
+	})
+	t.Run("with wrong class", func(t *testing.T) {
+		entry := entry
+		entry.ResourceClassRegex = `noth.*`
+		assert.False(t, f(entry))
+	})
+	t.Run("with wrong id", func(t *testing.T) {
+		entry := entry
+		entry.ResourceIdRegex = `noth.*`
+		assert.False(t, f(entry))
+	})
+	t.Run("with bad class regex", func(t *testing.T) {
+		entry := entry
+		entry.ResourceClassRegex = `*`
+		assert.False(t, f(entry))
+	})
+	t.Run("with bad id regex", func(t *testing.T) {
+		entry := entry
+		entry.ResourceIdRegex = `*`
+		assert.False(t, f(entry))
+	})
+}
+
+func Test_FindResourceComponent(t *testing.T) {
+	_, ok := FindResourceComponent(nil, "eg", "default", "some.resource")
+	assert.False(t, ok)
+	e, ok := FindResourceComponent([]ResourceComponentEntry{{
+		ResourceType: "eg", ResourceClassRegex: `.*`, ResourceIdRegex: `.*`,
+	}}, "eg", "default", "some.resource")
+	assert.True(t, ok)
+	assert.Equal(t, `.*`, e.ResourceClassRegex)
+}
