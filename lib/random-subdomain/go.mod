@@ -1,4 +1,4 @@
-module github.com/astromechza/scorpion/lib/debug
+module github.com/astromechza/scorpion/lib/random-subdomain
 
 go 1.25
 
