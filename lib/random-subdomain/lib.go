@@ -1,4 +1,4 @@
-package debug
+package random_subdomain
 
 import (
 	"encoding/hex"
