@@ -274,12 +274,12 @@ func buildInnerSubstitutionFunc(metadata map[string]interface{}, dependencies ma
 				if len(parts) < 2 {
 					return "", fmt.Errorf("invalid ref '%s': requires at least a metadata key to lookup", ref)
 				}
-				if rv, err := metadataLookup(parts[1:]...); err != nil {
+				rv, err := metadataLookup(parts[1:]...)
+				if err != nil {
 					return "", fmt.Errorf("invalid ref '%s': %w", ref, err)
-				} else {
-					*fmtArgs = append(*fmtArgs, jen.Lit(rv))
-					return "%v", nil
 				}
+				*fmtArgs = append(*fmtArgs, jen.Lit(rv))
+				return "%v", nil
 			case "resources":
 				if len(parts) < 2 {
 					return "", fmt.Errorf("invalid ref '%s': requires at least a resource name to lookup", ref)
@@ -310,15 +310,14 @@ func pulumifyValue(path []string, raw interface{}, innerSubstFunc func(fmtArgs *
 		if strings.Contains(typed, "${") {
 			typed = strings.ReplaceAll(typed, "%", "%%")
 			fmtArgs := make([]jen.Code, 0)
-			if v, err := framework.SubstituteString(typed, innerSubstFunc(&fmtArgs)); err != nil {
+			v, err := framework.SubstituteString(typed, innerSubstFunc(&fmtArgs))
+			if err != nil {
 				return nil, fmt.Errorf("failed to substitute %q at %s: %w", typed, strings.Join(path, "."), err)
-			} else {
-				fmtArgs = append([]jen.Code{jen.Lit(v)}, fmtArgs...)
-				return jen.Qual(DefaultPulumiPackage, "Sprintf").Call(fmtArgs...), nil
 			}
-		} else {
-			return jen.Qual(DefaultPulumiPackage, "String").Call(jen.Lit(typed)), nil
+			fmtArgs = append([]jen.Code{jen.Lit(v)}, fmtArgs...)
+			return jen.Qual(DefaultPulumiPackage, "Sprintf").Call(fmtArgs...), nil
 		}
+		return jen.Qual(DefaultPulumiPackage, "String").Call(jen.Lit(typed)), nil
 	case bool:
 		if typed {
 			return jen.Qual(DefaultPulumiPackage, "Bool").Call(jen.True()), nil
@@ -331,21 +330,21 @@ func pulumifyValue(path []string, raw interface{}, innerSubstFunc func(fmtArgs *
 	case []interface{}:
 		listValues := make([]jen.Code, 0, len(typed))
 		for i, v := range typed {
-			if out, err := pulumifyValue(append(path, fmt.Sprintf("[%d]", i)), v, innerSubstFunc); err != nil {
+			out, err := pulumifyValue(append(path, fmt.Sprintf("[%d]", i)), v, innerSubstFunc)
+			if err != nil {
 				return nil, err
-			} else {
-				listValues = append(listValues, out)
 			}
+			listValues = append(listValues, out)
 		}
 		return jen.Qual(DefaultPulumiPackage, "Array").Values(jen.List(listValues...)), nil
 	case map[string]interface{}:
 		mapValues := make(jen.Dict, len(typed))
 		for k, v := range typed {
-			if out, err := pulumifyValue(append(path, k), v, innerSubstFunc); err != nil {
+			out, err := pulumifyValue(append(path, k), v, innerSubstFunc)
+			if err != nil {
 				return nil, err
-			} else {
-				mapValues[jen.Lit(k)] = out
 			}
+			mapValues[jen.Lit(k)] = out
 		}
 		return jen.Qual(DefaultPulumiPackage, "Map").Values(mapValues), nil
 	default:
@@ -385,11 +384,11 @@ func BuildJenFile(g ComponentGraph) (*jen.File, error) {
 		substFunc := buildInnerSubstitutionFunc(n.Params, g.Dependencies[id])
 		argAssignments := make(jen.Dict, len(n.Params))
 		for k, v := range n.Params {
-			if o, err := pulumifyValue([]string{k}, v, substFunc); err != nil {
+			o, err := pulumifyValue([]string{k}, v, substFunc)
+			if err != nil {
 				return err
-			} else {
-				argAssignments[toParamName(k)] = o
 			}
+			argAssignments[toParamName(k)] = o
 		}
 
 		blockParts = append(

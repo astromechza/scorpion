@@ -6,15 +6,13 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-type Args struct {
-	Metadata   pulumi.MapInput `pulumi:"metadata"`
-	Containers pulumi.MapInput `pulumi:"containers"`
-	Service    pulumi.MapInput `pulumi:"service"`
-}
-
 type Debug struct {
 	pulumi.ResourceState
-	Args Args
+	Values pulumi.MapOutput
+}
+
+type Args struct {
+	Values pulumi.MapInput `pulumi:"values"`
 }
 
 func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOption) (*Debug, error) {
@@ -22,7 +20,12 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	if err := ctx.RegisterComponentResource("scorpion:builtin:Debug", name, debug, opts...); err != nil {
 		return nil, err
 	}
-	debug.Args = *args
-	slog.Info("debug workload profile executing", slog.Any("args", args))
+	debug.Values = args.Values.ToMapOutput()
+	slog.Info("debug workload profile executing", slog.Any("values", args.Values))
+	if err := ctx.RegisterResourceOutputs(debug, pulumi.Map{
+		"values": args.Values.ToMapOutput(),
+	}); err != nil {
+		return nil, err
+	}
 	return debug, nil
 }
