@@ -36,6 +36,9 @@ type ComponentInstance struct {
 	Params map[string]interface{}
 	// ParamsDefinedBy is the component that defines the params
 	ParamsDefinedBy ComponentGoIdentifier
+	// FixedParams are those defined in the configuration, take precedence over Params and are not subject to
+	// substitution.
+	FixedParams map[string]interface{}
 }
 
 type ComponentGoIdentifier string
@@ -174,6 +177,7 @@ func (cfg *ScoreConfig) GenerateComponentGraph() (ComponentGraph, error) {
 					Package:     componentEntry.Package,
 					Constructor: componentEntry.ConstructorFunc,
 					ArgsType:    componentEntry.ArgsStruct,
+					FixedParams: componentEntry.FixedParams,
 					Name:        resId,
 				}
 			}
@@ -234,6 +238,7 @@ func (cfg *ScoreConfig) GenerateComponentGraph() (ComponentGraph, error) {
 			Package:         cfg.DefaultWorkloadComponent.Package,
 			Constructor:     cfg.DefaultWorkloadComponent.ConstructorFunc,
 			ArgsType:        cfg.DefaultWorkloadComponent.ArgsStruct,
+			FixedParams:     cfg.DefaultWorkloadComponent.FixedParams,
 			Name:            "workload." + workloadName,
 			Params:          workloadParams,
 			ParamsDefinedBy: workloadGoIdentifier,
@@ -382,13 +387,15 @@ func BuildJenFile(g ComponentGraph) (*jen.File, error) {
 		n := g.Nodes[id]
 
 		substFunc := buildInnerSubstitutionFunc(n.Params, g.Dependencies[id])
-		argAssignments := make(jen.Dict, len(n.Params))
-		for k, v := range n.Params {
-			o, err := pulumifyValue([]string{k}, v, substFunc)
-			if err != nil {
-				return err
+		argAssignments := make(jen.Dict, len(n.Params)+len(n.FixedParams))
+		for _, m := range []map[string]interface{}{n.Params, n.FixedParams} {
+			for k, v := range m {
+				o, err := pulumifyValue([]string{k}, v, substFunc)
+				if err != nil {
+					return err
+				}
+				argAssignments[toParamName(k)] = o
 			}
-			argAssignments[toParamName(k)] = o
 		}
 
 		blockParts = append(

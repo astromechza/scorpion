@@ -1,11 +1,12 @@
 package internal
 
 import (
+	"os"
+	"testing"
+
 	"github.com/score-spec/score-go/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 func TestLoadConfig_missing(t *testing.T) {
@@ -20,7 +21,7 @@ func TestLoadConfig_bad_file(t *testing.T) {
 	t.Chdir(t.TempDir())
 	require.NoError(t, os.Mkdir(ConfigFile, 0o700))
 	c, ok, err := LoadConfig()
-	require.EqualError(t, err, "failed to decode config file: read config.json: is a directory")
+	require.EqualError(t, err, "failed to decode config file: yaml: input error: read score.config.yaml: is a directory")
 	require.False(t, ok)
 	require.Equal(t, ScoreConfig{}, c)
 }
@@ -29,7 +30,7 @@ func TestLoadConfig_bad_content(t *testing.T) {
 	t.Chdir(t.TempDir())
 	require.NoError(t, os.WriteFile(ConfigFile, []byte(`{"workloads":[],"blobs":4}`), 0o644))
 	c, ok, err := LoadConfig()
-	require.EqualError(t, err, "failed to decode config file: json: unknown field \"blobs\"")
+	require.EqualError(t, err, "failed to decode config file: yaml: unmarshal errors:\n  line 1: field blobs not found in type internal.ScoreConfig")
 	require.False(t, ok)
 	require.Equal(t, ScoreConfig{}, c)
 }
@@ -68,7 +69,7 @@ func TestSaveConfig(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, cfg, cfg2)
 	_, err = os.Stat(ConfigFile + ".tmp")
-	require.EqualError(t, err, "stat config.json.tmp: no such file or directory")
+	require.EqualError(t, err, "stat score.config.yaml.tmp: no such file or directory")
 }
 
 func Test_isResourceComponentAMatch(t *testing.T) {

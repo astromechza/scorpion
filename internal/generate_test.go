@@ -1,8 +1,9 @@
 package internal
 
 import (
-	"github.com/dave/jennifer/jen"
 	"testing"
+
+	"github.com/dave/jennifer/jen"
 
 	"github.com/score-spec/score-go/types"
 	"github.com/stretchr/testify/assert"
@@ -75,13 +76,15 @@ func TestGenerateComponentGraph_nominal(t *testing.T) {
 				Metadata: map[string]interface{}{"name": "foo"},
 				Resources: map[string]types.Resource{
 					"a": {
+						Type: "thing",
 						Params: map[string]interface{}{
 							"plain":   "${resources.b.p}",
 							"wrapped": "before ${resources.b.p} after",
 						},
 					},
 					"b": {
-						Id: ref("thing"),
+						Type: "thing",
+						Id:   ref("thing"),
 						Params: map[string]interface{}{
 							"x": "hello",
 							"y": "${metadata.name}",
@@ -93,14 +96,33 @@ func TestGenerateComponentGraph_nominal(t *testing.T) {
 				Metadata: map[string]interface{}{"name": "bar"},
 				Resources: map[string]types.Resource{
 					"a": {
+						Type: "thing",
 						Params: map[string]interface{}{
 							"raw": "banana",
 						},
 					},
 					"b": {
-						Id: ref("thing"),
+						Type: "thing",
+						Id:   ref("thing"),
 					},
 				},
+			},
+		},
+		DefaultWorkloadComponent: ComponentEntry{
+			Package:         "github.com/astromechza/pulumi-echo",
+			ConstructorFunc: "NewComponent",
+			ArgsStruct:      "Args",
+		},
+		ResourceComponents: []ResourceComponentEntry{
+			{
+				ComponentEntry: ComponentEntry{
+					Package:         "github.com/astromechza/pulumi-echo",
+					ConstructorFunc: "NewComponent",
+					ArgsStruct:      "Args",
+				},
+				ResourceType:       "thing",
+				ResourceClassRegex: `.*`,
+				ResourceIdRegex:    `.*`,
 			},
 		},
 	}

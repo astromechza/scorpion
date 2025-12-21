@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,27 +9,29 @@ import (
 
 	"github.com/score-spec/score-go/types"
 	"golang.org/x/mod/module"
+	"gopkg.in/yaml.v3"
 )
 
-const ConfigFile = "score.config.json"
+const ConfigFile = "score.config.yaml"
 
 type ScoreConfig struct {
-	Workloads                []types.Workload         `json:"workloads"`
-	DefaultWorkloadComponent ComponentEntry           `json:"default_workload_component"`
-	ResourceComponents       []ResourceComponentEntry `json:"resource_components"`
+	Workloads                []types.Workload         `yaml:"workloads,omitempty"`
+	DefaultWorkloadComponent ComponentEntry           `yaml:"default_workload_component"`
+	ResourceComponents       []ResourceComponentEntry `yaml:"resource_components,omitempty"`
 }
 
 type ComponentEntry struct {
-	Package         string `json:"package"`
-	ConstructorFunc string `json:"constructor_func"`
-	ArgsStruct      string `json:"args_struct"`
+	Package         string                 `yaml:"package"`
+	ConstructorFunc string                 `yaml:"constructor_func"`
+	ArgsStruct      string                 `yaml:"args_struct"`
+	FixedParams     map[string]interface{} `yaml:"fixed_params,omitempty"`
 }
 
 type ResourceComponentEntry struct {
-	ComponentEntry
-	ResourceType       string `json:"resource_type"`
-	ResourceClassRegex string `json:"resource_class_regex"`
-	ResourceIdRegex    string `json:"resource_id_regex"`
+	ComponentEntry     `yaml:",inline"`
+	ResourceType       string `yaml:"resource_type"`
+	ResourceClassRegex string `yaml:"resource_class_regex"`
+	ResourceIdRegex    string `yaml:"resource_id_regex"`
 }
 
 func LoadConfig() (ScoreConfig, bool, error) {
@@ -44,8 +45,8 @@ func LoadConfig() (ScoreConfig, bool, error) {
 			_ = f.Close()
 		}()
 		var cfg ScoreConfig
-		d := json.NewDecoder(f)
-		d.DisallowUnknownFields()
+		d := yaml.NewDecoder(f)
+		d.KnownFields(true)
 		if err := d.Decode(&cfg); err != nil {
 			return ScoreConfig{}, false, fmt.Errorf("failed to decode config file: %w", err)
 		}
@@ -64,8 +65,7 @@ func SaveConfig(cfg ScoreConfig) error {
 		defer func() {
 			_ = f.Close()
 		}()
-		e := json.NewEncoder(f)
-		e.SetIndent("", "  ")
+		e := yaml.NewEncoder(f)
 		if err := e.Encode(cfg); err != nil {
 			return fmt.Errorf("failed to encode config file: %w", err)
 		}

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 
 	"github.com/astromechza/score-pulumi/internal"
@@ -89,7 +90,7 @@ func scoreInit(profile string) error {
 		if err != nil {
 			return err
 		}
-		if profile != cfg.DefaultWorkloadComponent {
+		if !reflect.DeepEqual(profile, cfg.DefaultWorkloadComponent) {
 			cfg.DefaultWorkloadComponent = profile
 			if err := internal.SaveConfig(cfg); err != nil {
 				return err

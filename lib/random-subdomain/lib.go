@@ -24,10 +24,9 @@ const (
 )
 
 var (
-	charset = []byte{
-		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'j', 'k', 'm', 'n', 'p', 'q', 'r', 's', 't', 'v', 'w', 'x', 'y', 'z',
-		'2', '3', '4', '5', '6', '7', '8', '9',
-	}
+	alphaCharset   = []byte{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'j', 'k', 'm', 'n', 'p', 'q', 'r', 's', 't', 'v', 'w', 'x', 'y', 'z'}
+	numericCharset = []byte{'2', '3', '4', '5', '6', '7', '8', '9'}
+	charset        = append(append([]byte{}, numericCharset...), alphaCharset...)
 )
 
 func New(ctx *pulumi.Context, name string, args *Inputs, opts ...pulumi.ResourceOption) (*Outputs, error) {
@@ -64,6 +63,11 @@ func New(ctx *pulumi.Context, name string, args *Inputs, opts ...pulumi.Resource
 			out := make([]byte, len(rawSeed))
 			n := len(charset)
 			for i := range out {
+				if i == 0 {
+					// first char of the domain must be alphabetic
+					out[i] = alphaCharset[rawSeed[i]%byte(len(alphaCharset))]
+					continue
+				}
 				out[i] = charset[rawSeed[i]%byte(n)]
 			}
 			return string(out)
